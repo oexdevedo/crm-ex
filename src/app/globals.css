@@ -149,16 +149,16 @@ html[data-mode="light"] {
 
 :root,
 html[data-theme="violet"] {
-  --primary: oklch(0.526 0.247 293);
-  --primary-foreground: oklch(0.985 0 0);
-  --primary-hover: oklch(0.6 0.22 293);
-  --primary-soft: oklch(0.526 0.247 293 / 0.12);
-  --primary-soft-2: oklch(0.526 0.247 293 / 0.2);
-  --ring: oklch(0.526 0.247 293);
-  --chart-1: oklch(0.526 0.247 293);
-  --sidebar-primary: oklch(0.526 0.247 293);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-ring: oklch(0.526 0.247 293);
+  --primary: #fccf86;
+  --primary-foreground: #1c1917;
+  --primary-hover: #faba5f;
+  --primary-soft: rgba(252, 207, 134, 0.12);
+  --primary-soft-2: rgba(252, 207, 134, 0.2);
+  --ring: #fccf86;
+  --chart-1: #fccf86;
+  --sidebar-primary: #fccf86;
+  --sidebar-primary-foreground: #1c1917;
+  --sidebar-ring: #fccf86;
 }
 
 html[data-theme="emerald"] {
