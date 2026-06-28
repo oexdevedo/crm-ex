@@ -234,3 +234,32 @@ body:has(.auth-page) nextjs-portal,
 body:has(.auth-page) [data-next-badge="true"] {
   display: none !important;
 }
+
+/* Sidebar Curved Active Tab Effect */
+.sidebar-curved-active {
+  position: relative;
+  background-color: var(--card) !important; /* matches parent panel card bg */
+  border-radius: 20px 0 0 20px;
+  margin-left: 8px;
+  width: calc(100% - 8px);
+}
+.sidebar-curved-active::before,
+.sidebar-curved-active::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  width: 16px;
+  height: 16px;
+  background-color: transparent;
+  pointer-events: none;
+}
+.sidebar-curved-active::before {
+  top: -16px;
+  border-radius: 0 0 16px 0;
+  box-shadow: 6px 6px 0 6px var(--card);
+}
+.sidebar-curved-active::after {
+  bottom: -16px;
+  border-radius: 0 16px 0 0;
+  box-shadow: 6px -6px 0 6px var(--card);
+}
