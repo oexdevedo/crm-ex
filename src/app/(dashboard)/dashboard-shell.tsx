@@ -45,7 +45,7 @@ function DashboardShellInner({ children }: { children: React.ReactNode }) {
       <Sidebar open={sidebarOpen} onClose={closeSidebar} />
       
       {/* Curved floating main panel container */}
-      <div className="flex flex-1 flex-col overflow-hidden my-3 mr-3 lg:my-4 lg:mr-4 ml-0 bg-card rounded-[24px] border border-border/10 shadow-2xl relative">
+      <div className="flex flex-1 flex-col overflow-hidden my-3 mr-3 lg:my-4 lg:mr-4 lg:ml-0 bg-card rounded-[24px] lg:rounded-l-none border border-border/10 lg:border-l-0 shadow-2xl relative">
         <Header onOpenSidebar={() => setSidebarOpen(true)} />
         <main className="flex-1 overflow-y-auto p-4 sm:p-6">{children}</main>
       </div>

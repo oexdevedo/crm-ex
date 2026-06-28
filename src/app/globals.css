@@ -237,11 +237,13 @@ body:has(.auth-page) [data-next-badge="true"] {
 
 /* Sidebar Curved Active Tab Effect */
 .sidebar-curved-active {
-  position: relative;
+  position: absolute !important;
   background-color: var(--card) !important; /* matches parent panel card bg */
-  border-radius: 20px 0 0 20px;
-  margin-left: 8px;
-  width: calc(100% - 8px);
+  border-radius: 24px 0 0 24px;
+  right: 0 !important;
+  left: 12px !important;
+  top: 0 !important;
+  bottom: 0 !important;
 }
 .sidebar-curved-active::before,
 .sidebar-curved-active::after {
