@@ -92,7 +92,7 @@ function SignupPageInner() {
 
   if (success) {
     return (
-      <div className="relative flex min-h-screen items-center justify-center bg-background px-4 overflow-hidden">
+      <div className="relative flex min-h-screen items-center justify-center bg-transparent px-4 overflow-hidden">
         <SpaceBackground />
 
         <Card className="relative z-10 w-full max-w-md border-border/40 bg-card/65 backdrop-blur-2xl shadow-2xl">
@@ -131,7 +131,7 @@ function SignupPageInner() {
   }
 
   return (
-    <div className="relative flex min-h-screen items-center justify-center bg-background px-4 overflow-hidden">
+    <div className="relative flex min-h-screen items-center justify-center bg-transparent px-4 overflow-hidden">
       <SpaceBackground />
 
       <Card className="relative z-10 w-full max-w-md border-border/40 bg-card/65 backdrop-blur-2xl shadow-2xl">

@@ -14,6 +14,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { MessageSquare, CheckCircle, ArrowLeft } from "lucide-react";
+import { SpaceBackground } from "@/components/auth/space-background";
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState("");
@@ -43,8 +44,9 @@ export default function ForgotPasswordPage() {
 
   if (success) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-background px-4">
-        <Card className="w-full max-w-md border-border bg-card">
+      <div className="relative flex min-h-screen items-center justify-center bg-transparent px-4 overflow-hidden">
+        <SpaceBackground />
+        <Card className="relative z-10 w-full max-w-md border-border/40 bg-card/65 backdrop-blur-2xl shadow-2xl">
           <CardHeader className="items-center text-center">
             <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
               <CheckCircle className="h-6 w-6 text-primary" />
@@ -74,8 +76,9 @@ export default function ForgotPasswordPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background px-4">
-      <Card className="w-full max-w-md border-border bg-card">
+    <div className="relative flex min-h-screen items-center justify-center bg-transparent px-4 overflow-hidden">
+      <SpaceBackground />
+      <Card className="relative z-10 w-full max-w-md border-border/40 bg-card/65 backdrop-blur-2xl shadow-2xl">
         <CardHeader className="items-center text-center">
           <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
             <MessageSquare className="h-6 w-6 text-primary" />

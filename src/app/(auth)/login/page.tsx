@@ -67,7 +67,7 @@ function LoginPageInner() {
   };
 
   return (
-    <div className="relative flex min-h-screen items-center justify-center bg-background px-4 overflow-hidden">
+    <div className="relative flex min-h-screen items-center justify-center bg-transparent px-4 overflow-hidden">
       {/* Interactive Space Background */}
       <SpaceBackground />
 
