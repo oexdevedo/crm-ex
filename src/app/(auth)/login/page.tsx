@@ -7,20 +7,10 @@ import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { SpaceBackground } from "@/components/auth/space-background";
+import { Mail, Lock, ArrowLeft } from "lucide-react";
 
-// `useSearchParams` opts the component out of static prerendering
-// unless it sits under a Suspense boundary. We split the form into
-// a child component so the outer page can prerender the chrome
-// (background, card frame) while the form hydrates with the query
-// string on the client.
 export default function LoginPage() {
   return (
     <Suspense fallback={null}>
@@ -31,9 +21,6 @@ export default function LoginPage() {
 
 function LoginPageInner() {
   const searchParams = useSearchParams();
-  // Forwarded from `/join/<token>` when the visitor already has an
-  // account. After a successful sign-in we send them to the join
-  // page to accept rather than to /dashboard.
   const inviteToken = searchParams.get("invite");
 
   const [email, setEmail] = useState("");
@@ -71,76 +58,107 @@ function LoginPageInner() {
       {/* Interactive Space Background */}
       <SpaceBackground />
 
-      <Card className="relative z-10 w-full max-w-md border-border/40 bg-card/65 backdrop-blur-2xl shadow-2xl">
-        <CardHeader className="items-center text-center">
-          <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-xl mx-auto">
-            <img src="/logo.png" alt="Unico Ex Logo" className="h-12 w-12 rounded-xl object-contain animate-bounce [animation-duration:3s]" />
+      <Card className="relative z-10 w-full max-w-md border-border/20 bg-card shadow-2xl overflow-hidden rounded-2xl">
+        {/* Top Half: Landscape/Cosmic Banner */}
+        <div className="relative h-48 w-full overflow-hidden">
+          <img
+            src="/login-bg.jpg"
+            alt="Cosmic Banner"
+            className="absolute inset-0 h-full w-full object-cover object-center"
+          />
+          <div className="absolute inset-0 bg-gradient-to-b from-transparent to-black/60" />
+          
+          {/* Centered logo & title */}
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
+            <img
+              src="/logo.png"
+              alt="Unico Ex Logo"
+              className="h-14 w-14 rounded-2xl object-contain animate-bounce [animation-duration:4s] border border-white/10 shadow-xl"
+            />
+            <h1 className="text-xl font-bold tracking-widest text-white drop-shadow-md">
+              UNICO EX
+            </h1>
           </div>
-          <CardTitle className="text-xl text-foreground">
-            {inviteToken ? "Entrar para aceitar" : "Bem-vindo de volta"}
-          </CardTitle>
-          <CardDescription className="text-muted-foreground">
-            {inviteToken
-              ? "Entre na sua conta e nós levaremos você até o convite."
-              : "Entre na sua conta"}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
+        </div>
+
+        {/* Bottom Half: Form & Fields */}
+        <div className="bg-[#f8fafc] dark:bg-[#0b0f19] text-[#0f172a] dark:text-[#f8fafc] p-6 sm:p-8 flex flex-col gap-5">
+          <div className="text-center">
+            <h2 className="text-2xl font-bold tracking-tight text-[#0f172a] dark:text-white">
+              {inviteToken ? "Entrar para aceitar" : "Login"}
+            </h2>
+            <p className="text-sm text-muted-foreground mt-1">
+              {inviteToken
+                ? "Entre na sua conta para resgatar o convite"
+                : "Entre com suas credenciais de acesso"}
+            </p>
+          </div>
+
           <form onSubmit={handleLogin} className="flex flex-col gap-4">
             {error && (
-              <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-400">
+              <div className="rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-500 dark:text-red-400">
                 {error}
               </div>
             )}
 
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="email" className="text-muted-foreground">
+            {/* Email Field */}
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="email" className="text-muted-foreground text-xs font-semibold uppercase tracking-wider pl-2">
                 E-mail
               </Label>
-              <Input
-                id="email"
-                type="email"
-                placeholder="seu-email@exemplo.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-                className="border-border bg-muted text-foreground placeholder:text-muted-foreground focus-visible:border-primary focus-visible:ring-primary/20"
-              />
+              <div className="relative">
+                <Mail className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-rose-500/70 dark:text-rose-400/60" />
+                <Input
+                  id="email"
+                  type="email"
+                  placeholder="seu-email@exemplo.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                  className="h-11 rounded-full border-none bg-rose-100/50 dark:bg-rose-950/30 pl-11 text-[#0f172a] dark:text-white placeholder:text-rose-400/80 dark:placeholder:text-rose-300/30 focus-visible:ring-2 focus-visible:ring-primary"
+                />
+              </div>
             </div>
 
-            <div className="flex flex-col gap-2">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="password" className="text-muted-foreground">
+            {/* Password Field */}
+            <div className="flex flex-col gap-1.5">
+              <div className="flex items-center justify-between pl-2">
+                <Label htmlFor="password" className="text-muted-foreground text-xs font-semibold uppercase tracking-wider">
                   Senha
                 </Label>
                 <Link
                   href="/forgot-password"
-                  className="text-sm text-primary hover:text-primary/80"
+                  className="text-xs text-primary hover:underline"
                 >
                   Esqueceu sua senha?
                 </Link>
               </div>
-              <Input
-                id="password"
-                type="password"
-                placeholder="Digite sua senha"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                className="border-border bg-muted text-foreground placeholder:text-muted-foreground focus-visible:border-primary focus-visible:ring-primary/20"
-              />
+              <div className="relative">
+                <Lock className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-rose-500/70 dark:text-rose-400/60" />
+                <Input
+                  id="password"
+                  type="password"
+                  placeholder="Digite sua senha"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  className="h-11 rounded-full border-none bg-rose-100/50 dark:bg-rose-950/30 pl-11 text-[#0f172a] dark:text-white placeholder:text-rose-400/80 dark:placeholder:text-rose-300/30 focus-visible:ring-2 focus-visible:ring-primary"
+                />
+              </div>
             </div>
 
+            {/* Submit Button */}
             <Button
               type="submit"
               disabled={loading}
-              className="mt-2 h-10 w-full bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+              className="mt-3 h-11 w-full rounded-full bg-primary text-primary-foreground hover:bg-primary-hover font-semibold transition-all shadow-lg shadow-primary/20 disabled:opacity-50"
             >
               {loading ? "Entrando..." : "Entrar"}
             </Button>
           </form>
 
-          <p className="mt-6 text-center text-sm text-muted-foreground">
+          {/* Create Account Link */}
+          <p className="text-center text-sm text-muted-foreground">
             Não tem uma conta?{" "}
             <Link
               href={
@@ -148,12 +166,12 @@ function LoginPageInner() {
                   ? `/signup?invite=${encodeURIComponent(inviteToken)}`
                   : "/signup"
               }
-              className="text-primary hover:text-primary/80"
+              className="text-primary font-semibold hover:underline"
             >
               Criar conta
             </Link>
           </p>
-        </CardContent>
+        </div>
       </Card>
     </div>
   );

@@ -197,7 +197,7 @@ function SignupPageInner() {
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
                   required
-                  className="h-10 rounded-full border-none bg-rose-100/50 dark:bg-rose-950/30 pl-11 text-[#0f172a] dark:text-white placeholder:text-rose-400/80 dark:placeholder:text-rose-300/30 focus-visible:ring-2 focus-visible:ring-purple-500"
+                  className="h-10 rounded-full border-none bg-rose-100/50 dark:bg-rose-950/30 pl-11 text-[#0f172a] dark:text-white placeholder:text-rose-400/80 dark:placeholder:text-rose-300/30 focus-visible:ring-2 focus-visible:ring-primary"
                 />
               </div>
             </div>
@@ -216,7 +216,7 @@ function SignupPageInner() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required
-                  className="h-10 rounded-full border-none bg-rose-100/50 dark:bg-rose-950/30 pl-11 text-[#0f172a] dark:text-white placeholder:text-rose-400/80 dark:placeholder:text-rose-300/30 focus-visible:ring-2 focus-visible:ring-purple-500"
+                  className="h-10 rounded-full border-none bg-rose-100/50 dark:bg-rose-950/30 pl-11 text-[#0f172a] dark:text-white placeholder:text-rose-400/80 dark:placeholder:text-rose-300/30 focus-visible:ring-2 focus-visible:ring-primary"
                 />
               </div>
             </div>
@@ -235,7 +235,7 @@ function SignupPageInner() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
-                  className="h-10 rounded-full border-none bg-rose-100/50 dark:bg-rose-950/30 pl-11 text-[#0f172a] dark:text-white placeholder:text-rose-400/80 dark:placeholder:text-rose-300/30 focus-visible:ring-2 focus-visible:ring-purple-500"
+                  className="h-10 rounded-full border-none bg-rose-100/50 dark:bg-rose-950/30 pl-11 text-[#0f172a] dark:text-white placeholder:text-rose-400/80 dark:placeholder:text-rose-300/30 focus-visible:ring-2 focus-visible:ring-primary"
                 />
               </div>
             </div>
@@ -254,7 +254,7 @@ function SignupPageInner() {
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   required
-                  className="h-10 rounded-full border-none bg-rose-100/50 dark:bg-rose-950/30 pl-11 text-[#0f172a] dark:text-white placeholder:text-rose-400/80 dark:placeholder:text-rose-300/30 focus-visible:ring-2 focus-visible:ring-purple-500"
+                  className="h-10 rounded-full border-none bg-rose-100/50 dark:bg-rose-950/30 pl-11 text-[#0f172a] dark:text-white placeholder:text-rose-400/80 dark:placeholder:text-rose-300/30 focus-visible:ring-2 focus-visible:ring-primary"
                 />
               </div>
             </div>
@@ -263,7 +263,7 @@ function SignupPageInner() {
             <Button
               type="submit"
               disabled={loading}
-              className="mt-2 h-11 w-full rounded-full bg-[#7c3aed] text-white hover:bg-[#6d28d9] font-medium transition-all shadow-lg shadow-purple-500/20 disabled:opacity-50"
+              className="mt-2 h-11 w-full rounded-full bg-primary text-primary-foreground hover:bg-primary-hover font-semibold transition-all shadow-lg shadow-primary/20 disabled:opacity-50"
             >
               {loading ? "Criando conta..." : "Criar conta"}
             </Button>
@@ -278,7 +278,7 @@ function SignupPageInner() {
                   ? `/login?invite=${encodeURIComponent(inviteToken)}`
                   : "/login"
               }
-              className="text-purple-600 dark:text-purple-400 font-semibold hover:underline"
+              className="text-primary font-semibold hover:underline"
             >
               Entrar
             </Link>
