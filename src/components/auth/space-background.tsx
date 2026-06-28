@@ -63,8 +63,11 @@ export function SpaceBackground() {
       mouse.x += (mouse.targetX - mouse.x) * 0.05;
       mouse.y += (mouse.targetY - mouse.y) * 0.05;
 
-      // Dark space background with deep blue/purple tint
-      ctx.fillStyle = "#030014";
+      // Clear canvas frame for transparency
+      ctx.clearRect(0, 0, width, height);
+
+      // Draw a dark overlay for text contrast and blending
+      ctx.fillStyle = "rgba(3, 0, 20, 0.45)";
       ctx.fillRect(0, 0, width, height);
 
       // Render cosmic nebulas (glowing radial gradients)
@@ -154,7 +157,7 @@ export function SpaceBackground() {
   return (
     <canvas
       ref={canvasRef}
-      className="pointer-events-none absolute inset-0 -z-10 h-full w-full block"
+      className="pointer-events-none absolute inset-0 -z-10 h-full w-full block bg-[url('/login-bg.jpg')] bg-cover bg-center"
     />
   );
 }
