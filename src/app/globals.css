@@ -228,3 +228,9 @@ html[data-theme="rose"] {
     @apply font-sans;
   }
 }
+
+/* Hide Next.js dev tools overlay on auth pages to keep the design clean */
+body:has(.auth-page) nextjs-portal,
+body:has(.auth-page) [data-next-badge="true"] {
+  display: none !important;
+}
