@@ -17,7 +17,6 @@ import {
   Settings,
   LogOut,
   X,
-  User,
 } from "lucide-react";
 import {
   Avatar,
@@ -95,7 +94,7 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
       <aside
         className={cn(
           // Mobile: drawer that slides in
-          "fixed inset-y-0 left-0 z-40 flex h-full w-20 flex-col bg-[#0a0d14] dark:bg-[#030408]",
+          "fixed inset-y-0 left-0 z-40 flex h-full w-20 flex-col bg-[#0c0f16] dark:bg-[#04060b]",
           "transition-transform duration-200 ease-out will-change-transform",
           open ? "translate-x-0" : "-translate-x-full",
           // Desktop: static sidebar
@@ -123,7 +122,7 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
         </div>
 
         {/* Navigation list */}
-        <nav className="flex-1 overflow-y-auto pl-1 pr-0 py-4 flex flex-col items-center">
+        <nav className="flex-1 overflow-y-auto w-full py-4 flex flex-col items-center">
           <ul className="flex w-full flex-col gap-2">
             {navItems.map((item) => {
               const isActive =
@@ -134,20 +133,20 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
                 item.href === "/inbox" && totalUnread > 0 && !isActive;
 
               return (
-                <li key={item.href} className="relative flex w-full justify-end py-0.5">
+                <li key={item.href} className="relative flex w-full justify-center">
                   <Link
                     href={item.href}
                     title={item.label}
-                    className={cn(
-                      "flex h-12 w-14 items-center justify-center transition-all duration-200",
-                      isActive
-                        ? "sidebar-curved-active"
-                        : "text-muted-foreground/80 hover:text-foreground"
-                    )}
+                    className="relative flex h-12 w-full items-center justify-center text-muted-foreground/80 hover:text-foreground transition-all duration-200"
                   >
+                    {/* Curved background slide behind the centered icon */}
+                    {isActive && (
+                      <div className="sidebar-curved-active absolute inset-y-0 right-0 left-3" />
+                    )}
+
                     <div
                       className={cn(
-                        "flex h-10 w-10 items-center justify-center rounded-full transition-all duration-200",
+                        "relative z-10 flex h-10 w-10 items-center justify-center rounded-full transition-all duration-200",
                         isActive
                           ? "bg-primary text-primary-foreground shadow-md shadow-primary/30"
                           : "hover:bg-muted/30"
@@ -158,14 +157,14 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
 
                     {/* Unread indicators */}
                     {showUnreadDot && (
-                      <span className="absolute top-1.5 right-3 flex h-2.5 w-2.5">
+                      <span className="absolute top-1.5 right-4 flex h-2.5 w-2.5 z-20">
                         <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75" />
                         <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-primary" />
                       </span>
                     )}
                     
                     {item.beta && !isActive && (
-                      <span className="absolute bottom-1 right-2 h-1.5 w-1.5 rounded-full bg-amber-400" title="Beta" />
+                      <span className="absolute bottom-1.5 right-4.5 h-1.5 w-1.5 rounded-full bg-amber-400 z-20" title="Beta" />
                     )}
                   </Link>
                 </li>
@@ -178,20 +177,20 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
 
           {/* Settings Nav Item */}
           <ul className="flex w-full flex-col gap-2">
-            <li className="relative flex w-full justify-end py-0.5">
+            <li className="relative flex w-full justify-center">
               <Link
                 href="/settings"
                 title="Configurações"
-                className={cn(
-                  "flex h-12 w-14 items-center justify-center transition-all duration-200",
-                  pathname.startsWith("/settings")
-                    ? "sidebar-curved-active"
-                    : "text-muted-foreground/80 hover:text-foreground"
-                )}
+                className="relative flex h-12 w-full items-center justify-center text-muted-foreground/80 hover:text-foreground transition-all duration-200"
               >
+                {/* Curved background slide behind settings icon */}
+                {pathname.startsWith("/settings") && (
+                  <div className="sidebar-curved-active absolute inset-y-0 right-0 left-3" />
+                )}
+
                 <div
                   className={cn(
-                    "flex h-10 w-10 items-center justify-center rounded-full transition-all duration-200",
+                    "relative z-10 flex h-10 w-10 items-center justify-center rounded-full transition-all duration-200",
                     pathname.startsWith("/settings")
                       ? "bg-primary text-primary-foreground shadow-md shadow-primary/30"
                       : "hover:bg-muted/30"
@@ -207,7 +206,7 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
         {/* User Account / Avatar Dropdown */}
         <div className="shrink-0 flex justify-center pb-6">
           <DropdownMenu>
-            <DropdownMenuTrigger className="rounded-full focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-background">
+            <DropdownMenuTrigger className="rounded-full focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-[#0c0f16]">
               <Avatar className="size-10 border-2 border-primary/20 hover:border-primary transition-all">
                 {profile?.avatar_url ? (
                   <AvatarImage
@@ -243,7 +242,7 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
                   />
                 }
               >
-                <User className="size-4" />
+                <Settings className="size-4" />
                 Perfil
               </DropdownMenuItem>
               <DropdownMenuItem
