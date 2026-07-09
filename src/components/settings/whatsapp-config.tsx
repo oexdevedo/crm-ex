@@ -459,24 +459,24 @@ export function WhatsAppConfig() {
                 {connectionStatus === 'connected' ? 'Instância Ativa' : 'Desconectado'}
               </AlertTitle>
             </div>
-            <AlertDescription className="text-muted-foreground">
+             <AlertDescription className="text-muted-foreground">
               {connectionStatus === 'connected'
                 ? provider === 'chatwoot'
                   ? `A comunicação com a API do Chatwoot está ativa para a caixa de entrada "${cwInboxId}".`
-                  : provider === 'waha'
-                    ? `A comunicação com o WAHA está ativa para a sessão "${wahaSessionName}".`
+                  : provider === 'waha' || provider === 'direct_waha'
+                    ? `A comunicação direta com o WhatsApp está ativa.`
                     : `A comunicação com a Evolution API está operando corretamente para a instância "${phoneNumberId}".`
                 : statusMessage ||
                   (provider === 'chatwoot'
                     ? 'Configure as credenciais do Chatwoot abaixo para sincronizar as conversas ao Unico Ex.'
-                    : provider === 'waha'
-                      ? 'Configure as credenciais do WAHA abaixo para integrar o WhatsApp ao Unico Ex.'
+                    : provider === 'waha' || provider === 'direct_waha'
+                      ? 'Conecte seu WhatsApp diretamente ao Unico Ex usando o QR Code abaixo.'
                       : 'Configure as credenciais da Evolution API abaixo para integrar o WhatsApp ao Unico Ex.')}
             </AlertDescription>
           </Alert>
 
           {/* QR Code de Conexão */}
-          {connectionStatus === 'disconnected' && config && (provider === 'evolution' || provider === 'waha') && (
+          {connectionStatus === 'disconnected' && config && (provider === 'evolution' || provider === 'waha' || provider === 'direct_waha') && (
             <Card className="border border-border bg-card overflow-hidden">
               <CardHeader>
                 <CardTitle className="text-foreground text-base flex items-center gap-2">
