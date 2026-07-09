@@ -751,8 +751,24 @@ export async function createWahaSession(
       name: sessionName,
     }),
   })
-  if (!response.ok) {
+  
+  // 422 means session already exists, which is acceptable
+  if (!response.ok && response.status !== 422) {
     throw new Error(`WAHA createSession error: ${response.status}`)
+  }
+
+  // Ensure the session is started
+  const startUrl = `${baseUrl}/api/sessions/${sessionName}/start`
+  const startResponse = await fetch(startUrl, {
+    method: 'POST',
+    headers: {
+      'X-Api-Key': accessToken,
+    },
+  })
+  
+  // 422 means session is already started, which is acceptable
+  if (!startResponse.ok && startResponse.status !== 422) {
+    throw new Error(`WAHA startSession error: ${startResponse.status}`)
   }
 }
 
@@ -773,12 +789,30 @@ export async function verifyWahaConnection(args: {
   })
   
   if (response.status === 404) {
-    // Session doesn't exist, create it
+    // Session doesn't exist, create it and start it
     await createWahaSession({ sessionName, accessToken, baseUrl })
     // Re-check
     response = await fetch(url, {
       headers: { 'X-Api-Key': accessToken },
     })
+  } else if (response.ok) {
+    const data = await response.json()
+    // If session exists but is stopped, start it
+    if (data?.status === 'STOPPED') {
+      const startUrl = `${baseUrl}/api/sessions/${sessionName}/start`
+      const startResponse = await fetch(startUrl, {
+        method: 'POST',
+        headers: {
+          'X-Api-Key': accessToken,
+        },
+      })
+      if (startResponse.ok || startResponse.status === 422) {
+        // Re-check
+        response = await fetch(url, {
+          headers: { 'X-Api-Key': accessToken },
+        })
+      }
+    }
   }
   
   if (!response.ok) {
