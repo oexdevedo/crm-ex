@@ -843,13 +843,40 @@ export async function connectWahaInstance(args: {
   sessionName: string
 }): Promise<ConnectInstanceResult> {
   const { baseUrl, accessToken, sessionName } = args
+
+  // Check session status first
+  const statusUrl = `${baseUrl}/api/sessions/${sessionName}/status`
+  try {
+    const statusRes = await fetch(statusUrl, {
+      headers: { 'X-Api-Key': accessToken },
+    })
+    if (statusRes.ok) {
+      const statusData = await statusRes.json()
+      if (statusData?.status === 'WORKING') {
+        return {
+          status: 'connected',
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('WAHA session status check failed in connectWahaInstance:', err)
+  }
+
   const url = `${baseUrl}/api/${sessionName}/auth/qr`
   const response = await fetch(url, {
     headers: { 'X-Api-Key': accessToken },
   })
+  
   if (!response.ok) {
+    if (response.status === 422) {
+      // Session is not ready for QR or already starting.
+      return {
+        status: 'connecting',
+      }
+    }
     throw new Error(`WAHA qr check failed: ${response.status}`)
   }
+  
   const blob = await response.blob()
   const buffer = Buffer.from(await blob.arrayBuffer())
   const base64 = `data:image/png;base64,${buffer.toString('base64')}`
