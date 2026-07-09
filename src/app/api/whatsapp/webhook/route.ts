@@ -4,13 +4,8 @@ import { decrypt, encrypt, isLegacyFormat } from '@/lib/whatsapp/encryption'
 import { getMediaUrl, downloadMedia } from '@/lib/whatsapp/meta-api'
 import { normalizePhone } from '@/lib/whatsapp/phone-utils'
 import { findExistingContact, isUniqueViolation } from '@/lib/contacts/dedupe'
-import { verifyMetaWebhookSignature } from '@/lib/whatsapp/webhook-signature'
 import { runAutomationsForTrigger } from '@/lib/automations/engine'
 import { dispatchInboundToFlows } from '@/lib/flows/engine'
-import {
-  handleTemplateWebhookChange,
-  isTemplateWebhookField,
-} from '@/lib/whatsapp/template-webhook'
 
 // Lazy-initialized to avoid build-time crash when env vars are missing
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -78,86 +73,12 @@ interface WhatsAppWebhookEntry {
   }>
 }
 
-// GET - Webhook verification
-export async function GET(request: Request) {
-  try {
-    const { searchParams } = new URL(request.url)
-    const mode = searchParams.get('hub.mode')
-    const challenge = searchParams.get('hub.challenge')
-    const verifyToken = searchParams.get('hub.verify_token')
-
-    if (mode !== 'subscribe' || !challenge || !verifyToken) {
-      return NextResponse.json(
-        { error: 'Missing verification parameters' },
-        { status: 400 }
-      )
-    }
-
-    // Fetch all whatsapp configs to check verify tokens
-    const { data: configs, error: configError } = await supabaseAdmin()
-      .from('whatsapp_config')
-      .select('id, verify_token')
-
-    if (configError || !configs) {
-      console.error('Error fetching configs for verification:', configError)
-      return NextResponse.json(
-        { error: 'Verification failed' },
-        { status: 403 }
-      )
-    }
-
-    // Check if any config's verify_token matches. Also collect the
-    // matching row so we can opportunistically upgrade its token to
-    // GCM if it was still in the legacy CBC format.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let matchedConfig: any = null
-    for (const config of configs) {
-      if (!config.verify_token) continue
-      try {
-        if (decrypt(config.verify_token) === verifyToken) {
-          matchedConfig = config
-          break
-        }
-      } catch {
-        // Malformed / wrong-key token row — skip it and keep checking.
-      }
-    }
-
-    if (matchedConfig) {
-      // Fire-and-forget GCM upgrade. Safe to run on every subscribe
-      // since it's a no-op once the column is already GCM.
-      if (isLegacyFormat(matchedConfig.verify_token)) {
-        void supabaseAdmin()
-          .from('whatsapp_config')
-          .update({ verify_token: encrypt(verifyToken) })
-          .eq('id', matchedConfig.id)
-          .then(({ error }: { error: unknown }) => {
-            if (error) {
-              console.warn(
-                '[webhook] verify_token GCM upgrade failed:',
-                (error as { message?: string })?.message ?? error,
-              )
-            }
-          })
-      }
-      // Return challenge as plain text
-      return new Response(challenge, {
-        status: 200,
-        headers: { 'Content-Type': 'text/plain' },
-      })
-    }
-
-    return NextResponse.json(
-      { error: 'Verification token mismatch' },
-      { status: 403 }
-    )
-  } catch (error) {
-    console.error('Error in webhook GET verification:', error)
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    )
-  }
+// GET - Health check / mock verification
+export async function GET() {
+  return NextResponse.json(
+    { status: 'ok', message: 'Webhook endpoint active' },
+    { status: 200 }
+  )
 }
 
 function mapEvolutionWebhookToMeta(body: any): any {
@@ -324,10 +245,170 @@ function mapEvolutionWebhookToMeta(body: any): any {
   return null
 }
 
+function mapChatwootWebhookToMeta(body: any): any {
+  if (body.event !== 'message_created') return null
+
+  const accountId = body.account?.id
+  const inboxId = body.inbox?.id
+  if (!accountId || !inboxId) return null
+
+  const configPhoneNumberId = `chatwoot:${accountId}:${inboxId}`
+  
+  // Chatwoot message details
+  const messageId = body.id?.toString() || `cw_${Date.now()}`
+  const timestamp = Math.floor(new Date(body.created_at || Date.now()).getTime() / 1000).toString()
+  const content = body.content || ''
+  
+  const contact = body.conversation?.contact_inbox || body.sender
+  const rawPhone = contact?.phone_number || body.conversation?.meta?.sender?.phone_number || ''
+  const waId = rawPhone.replace(/\D/g, '') || `cw_contact_${body.conversation?.contact_id}`
+  const from = waId
+
+  const pushName = body.sender?.name || 'WhatsApp Contact'
+
+  // Determine type
+  let type = 'text'
+  let mediaData: any = null
+
+  if (body.attachments && body.attachments.length > 0) {
+    const attachment = body.attachments[0]
+    const fileUrl = attachment.data_url || attachment.url
+    const mimeType = attachment.file_type || 'image/jpeg'
+    
+    if (attachment.file_type?.startsWith('image')) {
+      type = 'image'
+      mediaData = { id: fileUrl, mime_type: mimeType, caption: content }
+    } else if (attachment.file_type?.startsWith('video')) {
+      type = 'video'
+      mediaData = { id: fileUrl, mime_type: mimeType, caption: content }
+    } else if (attachment.file_type?.startsWith('audio')) {
+      type = 'audio'
+      mediaData = { id: fileUrl, mime_type: mimeType }
+    } else {
+      type = 'document'
+      mediaData = { id: fileUrl, mime_type: mimeType, filename: 'Attachment', caption: content }
+    }
+  }
+
+  const mappedMessage: any = {
+    id: messageId,
+    from,
+    timestamp,
+    type,
+    from_me: body.message_type === 'outgoing',
+  }
+
+  if (type === 'text') {
+    mappedMessage.text = { body: content }
+  } else {
+    mappedMessage[type] = mediaData
+  }
+
+  return {
+    entry: [{
+      id: configPhoneNumberId,
+      changes: [{
+        field: 'messages',
+        value: {
+          messaging_product: 'whatsapp',
+          metadata: {
+            display_phone_number: configPhoneNumberId,
+            phone_number_id: configPhoneNumberId
+          },
+          contacts: [{
+            profile: { name: pushName },
+            wa_id: waId
+          }],
+          messages: [mappedMessage]
+        }
+      }]
+    }]
+  }
+}
+
+function mapWahaWebhookToMeta(body: any): any {
+  if (body.event !== 'message' && body.event !== 'message.received') return null
+
+  const session = body.session
+  if (!session) return null
+
+  const configPhoneNumberId = `waha:${session}`
+  
+  const payload = body.payload
+  if (!payload) return null
+
+  const messageId = payload.id || `waha_msg_${Date.now()}`
+  const timestamp = (payload.timestamp || Math.floor(Date.now() / 1000)).toString()
+  const content = payload.body || ''
+  
+  const rawFrom = payload.from || ''
+  const waId = rawFrom.replace(/\D/g, '') || `waha_contact_${Date.now()}`
+  const from = waId
+
+  const pushName = payload._data?.notifyName || 'WhatsApp Contact'
+
+  // Determine type
+  let type = 'text'
+  let mediaData: any = null
+
+  if (payload.hasMedia && payload.media) {
+    const fileUrl = payload.media.url
+    const mimeType = payload.media.mimetype || 'image/jpeg'
+    
+    if (mimeType.startsWith('image')) {
+      type = 'image'
+      mediaData = { id: fileUrl, mime_type: mimeType, caption: content }
+    } else if (mimeType.startsWith('video')) {
+      type = 'video'
+      mediaData = { id: fileUrl, mime_type: mimeType, caption: content }
+    } else if (mimeType.startsWith('audio')) {
+      type = 'audio'
+      mediaData = { id: fileUrl, mime_type: mimeType }
+    } else {
+      type = 'document'
+      mediaData = { id: fileUrl, mime_type: mimeType, filename: payload.media.filename || 'Attachment', caption: content }
+    }
+  }
+
+  const mappedMessage: any = {
+    id: messageId,
+    from,
+    timestamp,
+    type,
+    from_me: !!payload.fromMe,
+  }
+
+  if (type === 'text') {
+    mappedMessage.text = { body: content }
+  } else {
+    mappedMessage[type] = mediaData
+  }
+
+  return {
+    entry: [{
+      id: configPhoneNumberId,
+      changes: [{
+        field: 'messages',
+        value: {
+          messaging_product: 'whatsapp',
+          metadata: {
+            display_phone_number: configPhoneNumberId,
+            phone_number_id: configPhoneNumberId
+          },
+          contacts: [{
+            profile: { name: pushName },
+            wa_id: waId
+          }],
+          messages: [mappedMessage]
+        }
+      }]
+    }]
+  }
+}
+
 // POST - Receive messages
 export async function POST(request: Request) {
   const rawBody = await request.text()
-  const signature = request.headers.get('x-hub-signature-256')
 
   let body: any
   try {
@@ -336,7 +417,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
   }
 
-  // Detect and process Evolution API webhook
+  // Process Evolution API webhook
   if (body && body.event && body.instance) {
     const mapped = mapEvolutionWebhookToMeta(body)
     if (mapped) {
@@ -347,16 +428,29 @@ export async function POST(request: Request) {
     return NextResponse.json({ status: 'received' }, { status: 200 })
   }
 
-  if (!verifyMetaWebhookSignature(rawBody, signature)) {
-    console.warn('[webhook] rejected request with invalid signature')
-    return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
+  // Process Chatwoot webhook
+  if (body && body.event && body.account?.id && body.inbox?.id) {
+    const mapped = mapChatwootWebhookToMeta(body)
+    if (mapped) {
+      processWebhook(mapped).catch((error) => {
+        console.error('Error processing Chatwoot webhook:', error)
+      })
+    }
+    return NextResponse.json({ status: 'received' }, { status: 200 })
   }
 
-  processWebhook(body).catch((error) => {
-    console.error('Error processing webhook:', error)
-  })
+  // Process WAHA webhook
+  if (body && body.event && body.session && body.payload) {
+    const mapped = mapWahaWebhookToMeta(body)
+    if (mapped) {
+      processWebhook(mapped).catch((error) => {
+        console.error('Error processing WAHA webhook:', error)
+      })
+    }
+    return NextResponse.json({ status: 'received' }, { status: 200 })
+  }
 
-  return NextResponse.json({ status: 'received' }, { status: 200 })
+  return NextResponse.json({ error: 'Unsupported webhook payload format.' }, { status: 400 })
 }
 
 async function processWebhook(body: { entry?: WhatsAppWebhookEntry[] }) {
@@ -364,19 +458,6 @@ async function processWebhook(body: { entry?: WhatsAppWebhookEntry[] }) {
 
   for (const entry of body.entry) {
     for (const change of entry.changes) {
-      // Template-lifecycle events (status / quality / components
-      // updates from Meta) come in on a different change.field and
-      // have a different value shape — route them through the
-      // dedicated handler. Skip the messaging branches below so we
-      // don't try to read message-shaped fields off a template event.
-      if (isTemplateWebhookField(change.field)) {
-        await handleTemplateWebhookChange(
-          { field: change.field, value: change.value as unknown },
-          supabaseAdmin(),
-        )
-        continue
-      }
-
       const value = change.value
 
       // Handle status updates
@@ -764,14 +845,30 @@ async function processMessage(
     .eq('sender_type', 'customer')
   const isFirstInboundMessage = (priorCustomerMsgCount ?? 0) === 0
 
+  // Check if message with message_id already exists in the conversation (de-duplication)
+  const { data: existingMsg } = await supabaseAdmin()
+    .from('messages')
+    .select('id')
+    .eq('message_id', message.id)
+    .maybeSingle()
+
+  if (existingMsg) {
+    console.log('[webhook] message already exists; skipping insert', message.id)
+    return
+  }
+
+  const isFromMe = (message as any).from_me || false
+  const senderType = isFromMe ? 'agent' : 'customer'
+  const messageStatus = isFromMe ? 'read' : 'delivered'
+
   const { error: msgError } = await supabaseAdmin().from('messages').insert({
     conversation_id: conversation.id,
-    sender_type: 'customer',
+    sender_type: senderType,
     content_type: contentType,
     content_text: contentText,
     media_url: mediaUrl,
     message_id: message.id,
-    status: 'delivered',
+    status: messageStatus,
     created_at: new Date(parseInt(message.timestamp) * 1000).toISOString(),
     reply_to_message_id: replyToInternalId,
     // Only populated for content_type='interactive'. Migration 010 added
@@ -791,7 +888,7 @@ async function processMessage(
     .update({
       last_message_text: contentText || `[${message.type}]`,
       last_message_at: new Date().toISOString(),
-      unread_count: (conversation.unread_count || 0) + 1,
+      unread_count: isFromMe ? conversation.unread_count : (conversation.unread_count || 0) + 1,
       updated_at: new Date().toISOString(),
     })
     .eq('id', conversation.id)

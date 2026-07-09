@@ -272,6 +272,39 @@ export async function POST(request: Request) {
     }
 
     const attempt = async (phone: string): Promise<string> => {
+      const isWaha = config.phone_number_id.startsWith('waha:')
+      if (isWaha) {
+        const [_, sessionName] = config.phone_number_id.split(':')
+        const { sendWahaMessage } = await import('@/lib/whatsapp/meta-api')
+        return sendWahaMessage({
+          baseUrl: config.waba_id || '',
+          accessToken,
+          sessionName,
+          to: phone,
+          messageType: message_type,
+          content: content_text || undefined,
+          mediaUrl: media_url || undefined,
+          filename: filename || undefined,
+        })
+      }
+
+      const isChatwoot = config.phone_number_id.startsWith('chatwoot:')
+      if (isChatwoot) {
+        const [_, cwAccountId, cwInboxId] = config.phone_number_id.split(':')
+        const { sendChatwootMessage } = await import('@/lib/whatsapp/meta-api')
+        return sendChatwootMessage({
+          baseUrl: config.waba_id || '',
+          accessToken,
+          accountId: cwAccountId,
+          inboxId: cwInboxId,
+          to: phone,
+          messageType: message_type,
+          content: content_text || undefined,
+          mediaUrl: media_url || undefined,
+          filename: filename || undefined,
+        })
+      }
+
       if (message_type === 'template') {
         const result = await sendTemplateMessage({
           phoneNumberId: config.phone_number_id,

@@ -50,16 +50,27 @@ export function WhatsAppConfig() {
   const [statusMessage, setStatusMessage] = useState<string>('');
 
   const [phoneNumberId, setPhoneNumberId] = useState(''); // Evolution: Instance Name
-  const [wabaId, setWabaId] = useState(''); // Evolution: API URL
-  const [accessToken, setAccessToken] = useState(''); // Evolution: API Key
+  const [wabaId, setWabaId] = useState(''); // Evolution: API URL / Chatwoot: Installation URL
+  const [accessToken, setAccessToken] = useState(''); // Evolution: API Key / Chatwoot: API Token
   const [verifyToken, setVerifyToken] = useState(''); // Webhook verify token
   const [tokenEdited, setTokenEdited] = useState(false);
   const [loaded, setLoaded] = useState(false);
+
+  const [provider, setProvider] = useState<'evolution' | 'chatwoot' | 'waha'>('evolution');
+  const [cwAccountId, setCwAccountId] = useState('');
+  const [cwInboxId, setCwInboxId] = useState('');
+  const [wahaSessionName, setWahaSessionName] = useState('');
+
+  const [qrCode, setQrCode] = useState<string | null>(null);
+  const [fetchingQr, setFetchingQr] = useState(false);
+  const [pollingActive, setPollingActive] = useState(false);
 
   const webhookUrl =
     typeof window !== 'undefined'
       ? `${window.location.origin}/api/whatsapp/webhook`
       : '';
+
+
 
   const fetchConfig = useCallback(async (acctId: string) => {
     setLoading(true);
@@ -76,14 +87,40 @@ export function WhatsAppConfig() {
 
       if (data) {
         setConfig(data);
-        setPhoneNumberId(data.phone_number_id || '');
+        const isCw = data.phone_number_id?.startsWith('chatwoot:');
+        const isWaha = data.phone_number_id?.startsWith('waha:');
+        setProvider(isWaha ? 'waha' : isCw ? 'chatwoot' : 'evolution');
+        
+        if (isCw) {
+          const [_, accountVal, inboxVal] = data.phone_number_id.split(':');
+          setCwAccountId(accountVal || '');
+          setCwInboxId(inboxVal || '');
+          setPhoneNumberId('');
+          setWahaSessionName('');
+        } else if (isWaha) {
+          const [_, sessionVal] = data.phone_number_id.split(':');
+          setWahaSessionName(sessionVal || '');
+          setPhoneNumberId('');
+          setCwAccountId('');
+          setCwInboxId('');
+        } else {
+          setPhoneNumberId(data.phone_number_id || '');
+          setCwAccountId('');
+          setCwInboxId('');
+          setWahaSessionName('');
+        }
+        
         setWabaId(data.waba_id || '');
         setAccessToken(MASKED_TOKEN);
         setVerifyToken(data.verify_token ? '••••••••' : '');
         setTokenEdited(false);
       } else {
         setConfig(null);
+        setProvider('evolution');
         setPhoneNumberId('');
+        setCwAccountId('');
+        setCwInboxId('');
+        setWahaSessionName('');
         setWabaId('');
         setAccessToken('');
         setVerifyToken('');
@@ -133,14 +170,92 @@ export function WhatsAppConfig() {
     }
   }, [authLoading, profileLoading, user, accountId, fetchConfig, loaded]);
 
-  async function handleSave() {
-    if (!phoneNumberId.trim()) {
-      toast.error('Nome da Instância é obrigatório');
-      return;
+  // Auto-fetch QR code when status is disconnected and config exists
+  useEffect(() => {
+    if (connectionStatus === 'disconnected' && config) {
+      fetchQrCode();
+      setPollingActive(true);
+    } else {
+      setQrCode(null);
+      setPollingActive(false);
     }
-    if (!wabaId.trim()) {
-      toast.error('A URL da API Evolution é obrigatória');
-      return;
+  }, [connectionStatus, config]);
+
+  // Polling logic to check connection state
+  useEffect(() => {
+    if (!pollingActive || !accountId) return;
+
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch('/api/whatsapp/config', { method: 'GET' });
+        const payload = await res.json();
+        if (payload.connected) {
+          setConnectionStatus('connected');
+          setQrCode(null);
+          setPollingActive(false);
+          toast.success('Dispositivo conectado com sucesso!');
+          fetchConfig(accountId);
+        }
+      } catch (err) {
+        console.error('Erro no polling de conexão:', err);
+      }
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [pollingActive, accountId, fetchConfig]);
+
+  async function fetchQrCode() {
+    try {
+      setFetchingQr(true);
+      const res = await fetch('/api/whatsapp/connect');
+      const data = await res.json();
+      if (res.ok && data.base64) {
+        setQrCode(data.base64);
+      } else {
+        setQrCode(null);
+      }
+    } catch (err) {
+      console.error('Erro ao buscar QR code:', err);
+      setQrCode(null);
+    } finally {
+      setFetchingQr(false);
+    }
+  }
+
+  async function handleSave() {
+    const isCw = provider === 'chatwoot';
+    const isWaha = provider === 'waha';
+    if (isCw) {
+      if (!cwAccountId.trim()) {
+        toast.error('O ID da Conta Chatwoot é obrigatório');
+        return;
+      }
+      if (!cwInboxId.trim()) {
+        toast.error('O ID da Caixa de Entrada (Inbox ID) é obrigatório');
+        return;
+      }
+      if (!wabaId.trim()) {
+        toast.error('A URL da Instalação do Chatwoot é obrigatória');
+        return;
+      }
+    } else if (isWaha) {
+      if (!wahaSessionName.trim()) {
+        toast.error('O Nome da Sessão WAHA é obrigatório');
+        return;
+      }
+      if (!wabaId.trim()) {
+        toast.error('A URL do Servidor WAHA é obrigatória');
+        return;
+      }
+    } else {
+      if (!phoneNumberId.trim()) {
+        toast.error('Nome da Instância é obrigatório');
+        return;
+      }
+      if (!wabaId.trim()) {
+        toast.error('A URL da API Evolution é obrigatória');
+        return;
+      }
     }
     if (!config && (!accessToken.trim() || !tokenEdited)) {
       toast.error('A Chave da API (Access Token) é obrigatória no primeiro cadastro');
@@ -150,11 +265,17 @@ export function WhatsAppConfig() {
     try {
       setSaving(true);
 
+      const phoneIdValue = isCw 
+        ? `chatwoot:${cwAccountId.trim()}:${cwInboxId.trim()}` 
+        : isWaha 
+          ? `waha:${wahaSessionName.trim()}` 
+          : phoneNumberId.trim();
+
       const payload: Record<string, unknown> = {
-        phone_number_id: phoneNumberId.trim(),
+        phone_number_id: phoneIdValue,
         waba_id: wabaId.trim(),
         verify_token: verifyToken.trim() || null,
-        pin: null, // Bypassed in Evolution API
+        pin: null, // Bypassed
       };
 
       if (tokenEdited && accessToken !== MASKED_TOKEN && accessToken.trim()) {
@@ -327,80 +448,314 @@ export function WhatsAppConfig() {
             </div>
             <AlertDescription className="text-muted-foreground">
               {connectionStatus === 'connected'
-                ? `A comunicação com a Evolution API está operando corretamente para a instância "${phoneNumberId}".`
+                ? provider === 'chatwoot'
+                  ? `A comunicação com a API do Chatwoot está ativa para a caixa de entrada "${cwInboxId}".`
+                  : provider === 'waha'
+                    ? `A comunicação com o WAHA está ativa para a sessão "${wahaSessionName}".`
+                    : `A comunicação com a Evolution API está operando corretamente para a instância "${phoneNumberId}".`
                 : statusMessage ||
-                  'Configure as credenciais da Evolution API abaixo para integrar o WhatsApp ao Unico Ex.'}
+                  (provider === 'chatwoot'
+                    ? 'Configure as credenciais do Chatwoot abaixo para sincronizar as conversas ao Unico Ex.'
+                    : provider === 'waha'
+                      ? 'Configure as credenciais do WAHA abaixo para integrar o WhatsApp ao Unico Ex.'
+                      : 'Configure as credenciais da Evolution API abaixo para integrar o WhatsApp ao Unico Ex.')}
             </AlertDescription>
           </Alert>
+
+          {/* QR Code de Conexão */}
+          {connectionStatus === 'disconnected' && config && (provider === 'evolution' || provider === 'waha') && (
+            <Card className="border border-border bg-card overflow-hidden">
+              <CardHeader>
+                <CardTitle className="text-foreground text-base flex items-center gap-2">
+                  <Zap className="size-4 text-primary animate-pulse" />
+                  Escanear QR Code para Conectar
+                </CardTitle>
+                <CardDescription className="text-muted-foreground">
+                  Abra o WhatsApp no seu celular, vá em Aparelhos Conectados &gt; Conectar um Aparelho, e aponte a câmera para o QR Code abaixo.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="flex flex-col items-center justify-center p-6 bg-muted/30">
+                {fetchingQr ? (
+                  <div className="flex flex-col items-center justify-center py-12 gap-3">
+                    <Loader2 className="size-8 animate-spin text-primary" />
+                    <p className="text-sm text-muted-foreground">Gerando QR Code...</p>
+                  </div>
+                ) : qrCode ? (
+                  <div className="space-y-4 text-center">
+                    <div className="bg-white p-4 rounded-lg inline-block border border-border">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={qrCode} alt="WhatsApp QR Code" className="size-64" />
+                    </div>
+                    <p className="text-xs text-muted-foreground animate-pulse">
+                      Aguardando leitura do QR Code pelo WhatsApp...
+                    </p>
+                  </div>
+                ) : (
+                  <div className="text-center py-6 space-y-3">
+                    <p className="text-sm text-muted-foreground">Não foi possível carregar o QR Code automaticamente.</p>
+                    <Button onClick={fetchQrCode} size="sm" variant="outline">
+                      Gerar Novo QR Code
+                    </Button>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
 
           {/* Credenciais da API */}
           <Card>
             <CardHeader>
               <CardTitle className="text-foreground">Credenciais da API</CardTitle>
               <CardDescription className="text-muted-foreground">
-                Insira as credenciais de acesso da sua Evolution API.
+                Selecione o provedor e insira as credenciais de acesso para integrar as mensagens.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-2">
-                <Label className="text-muted-foreground">Nome da Instância (Instance Name)</Label>
-                <Input
-                  placeholder="Ex: unico-ex"
-                  value={phoneNumberId}
-                  onChange={(e) => setPhoneNumberId(e.target.value)}
-                  className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
-                />
-                <p className="text-xs text-muted-foreground">
-                  O identificador exato da instância criada no Evolution API.
-                </p>
-              </div>
-
-              <div className="space-y-2">
-                <Label className="text-muted-foreground">URL da Evolution API</Label>
-                <Input
-                  placeholder="Ex: https://api.evolution-api.com"
-                  value={wabaId}
-                  onChange={(e) => setWabaId(e.target.value)}
-                  className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
-                />
-                <p className="text-xs text-muted-foreground">
-                  A URL base do servidor onde o Evolution API está rodando.
-                </p>
-              </div>
-
-              <div className="space-y-2">
-                <Label className="text-muted-foreground">Chave da API (API Key)</Label>
-                <div className="relative">
-                  <Input
-                    type={showToken ? 'text' : 'password'}
-                    placeholder="Insira a apikey da Evolution API"
-                    value={accessToken}
-                    onChange={(e) => {
-                      setAccessToken(e.target.value);
+                <Label className="text-muted-foreground">Provedor de Conexão (Provider)</Label>
+                 <div className="grid grid-cols-3 gap-2">
+                  <Button
+                    type="button"
+                    variant={provider === 'evolution' ? 'default' : 'outline'}
+                    onClick={() => {
+                      setProvider('evolution');
+                      setWabaId('');
+                      setAccessToken('');
                       setTokenEdited(true);
                     }}
-                    onFocus={() => {
-                      if (accessToken === MASKED_TOKEN) {
-                        setAccessToken('');
-                        setTokenEdited(true);
-                      }
-                    }}
-                    className="bg-muted border-border text-foreground placeholder:text-muted-foreground pr-10"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowToken(!showToken)}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                    className="w-full justify-center"
                   >
-                    {showToken ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
-                  </button>
+                    Evolution API
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={provider === 'chatwoot' ? 'default' : 'outline'}
+                    onClick={() => {
+                      setProvider('chatwoot');
+                      setWabaId('');
+                      setAccessToken('');
+                      setTokenEdited(true);
+                    }}
+                    className="w-full justify-center"
+                  >
+                    Chatwoot
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={provider === 'waha' ? 'default' : 'outline'}
+                    onClick={() => {
+                      setProvider('waha');
+                      setWabaId('');
+                      setAccessToken('');
+                      setTokenEdited(true);
+                    }}
+                    className="w-full justify-center"
+                  >
+                    WAHA
+                  </Button>
                 </div>
-                {config && !tokenEdited && (
-                  <p className="text-xs text-muted-foreground">
-                    A chave de API está oculta por segurança. Reinsira-a para salvar alterações.
-                  </p>
-                )}
               </div>
+
+              {provider === 'evolution' ? (
+                <>
+                  <div className="space-y-2">
+                    <Label className="text-muted-foreground">Nome da Instância (Instance Name)</Label>
+                    <Input
+                      placeholder="Ex: unico-ex"
+                      value={phoneNumberId}
+                      onChange={(e) => setPhoneNumberId(e.target.value)}
+                      className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      O identificador exato da instância criada no Evolution API.
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="text-muted-foreground">URL da Evolution API</Label>
+                    <Input
+                      placeholder="Ex: https://api.evolution-api.com"
+                      value={wabaId}
+                      onChange={(e) => setWabaId(e.target.value)}
+                      className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      A URL base do servidor onde o Evolution API está rodando.
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="text-muted-foreground">Chave da API (API Key)</Label>
+                    <div className="relative">
+                      <Input
+                        type={showToken ? 'text' : 'password'}
+                        placeholder="Insira a apikey da Evolution API"
+                        value={accessToken}
+                        onChange={(e) => {
+                          setAccessToken(e.target.value);
+                          setTokenEdited(true);
+                        }}
+                        onFocus={() => {
+                          if (accessToken === MASKED_TOKEN) {
+                            setAccessToken('');
+                            setTokenEdited(true);
+                          }
+                        }}
+                        className="bg-muted border-border text-foreground placeholder:text-muted-foreground pr-10"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowToken(!showToken)}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                      >
+                        {showToken ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                      </button>
+                    </div>
+                    {config && !tokenEdited && (
+                      <p className="text-xs text-muted-foreground">
+                        A chave de API está oculta por segurança. Reinsira-a para salvar alterações.
+                      </p>
+                    )}
+                  </div>
+                </>
+              ) : provider === 'chatwoot' ? (
+                <>
+                  <div className="space-y-2">
+                    <Label className="text-muted-foreground">ID da Conta Chatwoot (Account ID)</Label>
+                    <Input
+                      placeholder="Ex: 1"
+                      value={cwAccountId}
+                      onChange={(e) => setCwAccountId(e.target.value)}
+                      className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      O ID numérico da sua conta no painel do Chatwoot.
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="text-muted-foreground">ID da Caixa de Entrada (Inbox ID)</Label>
+                    <Input
+                      placeholder="Ex: 5"
+                      value={cwInboxId}
+                      onChange={(e) => setCwInboxId(e.target.value)}
+                      className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      O ID da caixa de entrada (inbox) configurada no Chatwoot.
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="text-muted-foreground">URL do Servidor Chatwoot</Label>
+                    <Input
+                      placeholder="Ex: https://app.chatwoot.com"
+                      value={wabaId}
+                      onChange={(e) => setWabaId(e.target.value)}
+                      className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      A URL base da sua instalação ou nuvem do Chatwoot.
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="text-muted-foreground">Token de Acesso da API (API Access Token)</Label>
+                    <div className="relative">
+                      <Input
+                        type={showToken ? 'text' : 'password'}
+                        placeholder="Insira seu Token de Acesso da API do Chatwoot"
+                        value={accessToken}
+                        onChange={(e) => {
+                          setAccessToken(e.target.value);
+                          setTokenEdited(true);
+                        }}
+                        onFocus={() => {
+                          if (accessToken === MASKED_TOKEN) {
+                            setAccessToken('');
+                            setTokenEdited(true);
+                          }
+                        }}
+                        className="bg-muted border-border text-foreground placeholder:text-muted-foreground pr-10"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowToken(!showToken)}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                      >
+                        {showToken ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                      </button>
+                    </div>
+                    {config && !tokenEdited && (
+                      <p className="text-xs text-muted-foreground">
+                        O token de acesso está oculto por segurança. Reinsira-o para salvar alterações.
+                      </p>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="space-y-2">
+                    <Label className="text-muted-foreground">Nome da Sessão WAHA (Session Name)</Label>
+                    <Input
+                      placeholder="Ex: default"
+                      value={wahaSessionName}
+                      onChange={(e) => setWahaSessionName(e.target.value)}
+                      className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      O nome da sessão criada no WAHA (ex: default).
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="text-muted-foreground">URL do Servidor WAHA</Label>
+                    <Input
+                      placeholder="Ex: https://area-51-waha.mypaeg.easypanel.host"
+                      value={wabaId}
+                      onChange={(e) => setWabaId(e.target.value)}
+                      className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      A URL base do servidor onde o WAHA está rodando.
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="text-muted-foreground">Chave da API WAHA (API Key / Token)</Label>
+                    <div className="relative">
+                      <Input
+                        type={showToken ? 'text' : 'password'}
+                        placeholder="Insira a apikey configurada no WAHA"
+                        value={accessToken}
+                        onChange={(e) => {
+                          setAccessToken(e.target.value);
+                          setTokenEdited(true);
+                        }}
+                        onFocus={() => {
+                          if (accessToken === MASKED_TOKEN) {
+                            setAccessToken('');
+                            setTokenEdited(true);
+                          }
+                        }}
+                        className="bg-muted border-border text-foreground placeholder:text-muted-foreground pr-10"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowToken(!showToken)}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                      >
+                        {showToken ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                      </button>
+                    </div>
+                    {config && !tokenEdited && (
+                      <p className="text-xs text-muted-foreground">
+                        A chave de API está oculta por segurança. Reinsira-a para salvar alterações.
+                      </p>
+                    )}
+                  </div>
+                </>
+              )}
 
               <div className="space-y-2">
                 <Label className="text-muted-foreground">Token de Verificação do Webhook (Opcional)</Label>
@@ -422,7 +777,7 @@ export function WhatsAppConfig() {
             <CardHeader>
               <CardTitle className="text-foreground">Configuração do Webhook</CardTitle>
               <CardDescription className="text-muted-foreground">
-                Copie a URL abaixo para cadastrar no Evolution API para receber as mensagens no chat.
+                Copie a URL abaixo para cadastrar como Webhook no {provider === 'chatwoot' ? 'Chatwoot' : provider === 'waha' ? 'WAHA' : 'Evolution API'} para receber mensagens no chat.
               </CardDescription>
             </CardHeader>
             <CardContent>

@@ -21,6 +21,32 @@ export interface VerifyPhoneNumberArgs {
   phoneNumberId: string
   accessToken: string
   wabaId?: string
+  allowClosed?: boolean
+}
+
+/**
+ * Create an instance in Evolution API.
+ */
+export async function createInstance(
+  args: { phoneNumberId: string; accessToken: string; wabaId?: string }
+): Promise<void> {
+  const { phoneNumberId, accessToken, wabaId } = args
+  const baseUrl = wabaId || 'http://localhost:8080'
+  const url = `${baseUrl}/instance/create`
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      apikey: accessToken,
+    },
+    body: JSON.stringify({
+      instanceName: phoneNumberId,
+      qrcode: true,
+    }),
+  })
+  if (!response.ok) {
+    throw new Error(`Evolution API createInstance error: ${response.status}`)
+  }
 }
 
 /**
@@ -29,24 +55,71 @@ export interface VerifyPhoneNumberArgs {
 export async function verifyPhoneNumber(
   args: VerifyPhoneNumberArgs
 ): Promise<MetaPhoneInfo> {
-  const { phoneNumberId, accessToken, wabaId } = args
+  const { phoneNumberId, accessToken, wabaId, allowClosed = false } = args
   const baseUrl = wabaId || 'http://localhost:8080'
   const url = `${baseUrl}/instance/connectionState/${phoneNumberId}`
-  const response = await fetch(url, {
+  
+  let response = await fetch(url, {
     headers: { apikey: accessToken },
   })
+  
+  if (response.status === 404) {
+    // Auto-create instance if it doesn't exist
+    await createInstance({ phoneNumberId, accessToken, wabaId })
+    // Re-check state after creation
+    response = await fetch(url, {
+      headers: { apikey: accessToken },
+    })
+  }
+  
   if (!response.ok) {
     throw new Error(`Evolution API instance state error: ${response.status}`)
   }
+  
   const data = await response.json()
-  if (data?.instance?.state !== 'open') {
-    throw new Error(`Evolution instance state is "${data?.instance?.state || 'disconnected'}" (needs to be open).`)
+  const state = data?.instance?.state || data?.state
+  if (state !== 'open' && !allowClosed) {
+    throw new Error(`Evolution instance state is "${state || 'disconnected'}" (needs to be open).`)
   }
+  
   return {
     id: phoneNumberId,
     display_phone_number: phoneNumberId,
     verified_name: `Evolution Instance: ${phoneNumberId}`,
     quality_rating: 'GREEN',
+  }
+}
+
+export interface ConnectInstanceArgs {
+  phoneNumberId: string
+  accessToken: string
+  wabaId?: string
+}
+
+export interface ConnectInstanceResult {
+  base64?: string
+  status?: string
+}
+
+/**
+ * Fetch QR Code / connection payload from Evolution API.
+ */
+export async function connectInstance(
+  args: ConnectInstanceArgs
+): Promise<ConnectInstanceResult> {
+  const { phoneNumberId, accessToken, wabaId } = args
+  const baseUrl = wabaId || 'http://localhost:8080'
+  const url = `${baseUrl}/instance/connect/${phoneNumberId}`
+  const response = await fetch(url, {
+    headers: { apikey: accessToken },
+  })
+  if (!response.ok) {
+    throw new Error(`Evolution API connect error: ${response.status}`)
+  }
+  const data = await response.json()
+  return {
+    base64: data?.qrcode?.base64 || data?.base64 || undefined,
+    status: data?.instance?.status || data?.status || 'unknown',
   }
 }
 
@@ -480,5 +553,350 @@ export const INTERACTIVE_LIMITS = {
   maxListRowsTotal: 10,
   listRowTitleMaxLength: 24,
   listRowDescriptionMaxLength: 72,
+}
+
+/**
+ * Verify a Chatwoot connection.
+ */
+export async function verifyChatwootConnection(args: {
+  baseUrl: string
+  accessToken: string
+  accountId: string
+  inboxId: string
+}): Promise<MetaPhoneInfo> {
+  const { baseUrl, accessToken, accountId, inboxId } = args
+  const url = `${baseUrl}/api/v1/accounts/${accountId}/inboxes`
+  const response = await fetch(url, {
+    headers: { api_access_token: accessToken },
+  })
+  if (!response.ok) {
+    throw new Error(`Chatwoot connection failed: ${response.status}`)
+  }
+  const inboxes = await response.json()
+  const exists = inboxes?.some((ib: any) => ib.id === parseInt(inboxId))
+  if (!exists) {
+    throw new Error(`Chatwoot Inbox ID ${inboxId} not found in account ${accountId}`)
+  }
+  return {
+    id: `chatwoot:${accountId}:${inboxId}`,
+    display_phone_number: `Chatwoot Inbox #${inboxId}`,
+    verified_name: `Chatwoot Connection`,
+    quality_rating: 'GREEN',
+  }
+}
+
+/**
+ * Send a message via Chatwoot API.
+ */
+export async function sendChatwootMessage(args: {
+  baseUrl: string
+  accessToken: string
+  accountId: string
+  inboxId: string
+  to: string
+  messageType: 'text' | 'image' | 'video' | 'audio' | 'document' | 'template'
+  content?: string
+  mediaUrl?: string
+  filename?: string
+}): Promise<string> {
+  const { baseUrl, accessToken, accountId, inboxId, to, messageType, content, mediaUrl, filename } = args
+
+  // 1. Search for contact by phone number
+  const formattedPhone = to.startsWith('+') ? to : `+${to}`
+  const searchUrl = `${baseUrl}/api/v1/accounts/${accountId}/contacts/search?q=${encodeURIComponent(formattedPhone)}`
+  const searchRes = await fetch(searchUrl, {
+    headers: { api_access_token: accessToken },
+  })
+  
+  let contactId: number | null = null
+  if (searchRes.ok) {
+    const searchData = await searchRes.json()
+    if (searchData?.payload && searchData.payload.length > 0) {
+      contactId = searchData.payload[0].id
+    }
+  }
+
+  // 2. Create contact if not found
+  if (!contactId) {
+    const createContactUrl = `${baseUrl}/api/v1/accounts/${accountId}/contacts`
+    const createRes = await fetch(createContactUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        api_access_token: accessToken,
+      },
+      body: JSON.stringify({
+        name: `WhatsApp Contact ${to}`,
+        phone_number: formattedPhone,
+      }),
+    })
+    if (!createRes.ok) {
+      throw new Error(`Chatwoot failed to create contact: ${createRes.status}`)
+    }
+    const contactData = await createRes.json()
+    contactId = contactData?.payload?.contact?.id || contactData?.id
+  }
+
+  if (!contactId) {
+    throw new Error('Could not resolve or create Chatwoot contact.')
+  }
+
+  // 3. Find or create conversation
+  const convsUrl = `${baseUrl}/api/v1/accounts/${accountId}/contacts/${contactId}/conversations`
+  const convsRes = await fetch(convsUrl, {
+    headers: { api_access_token: accessToken },
+  })
+  
+  let conversationId: number | null = null
+  if (convsRes.ok) {
+    const convsData = await convsRes.json()
+    const activeConv = convsData?.payload?.find((c: any) => c.inbox_id === parseInt(inboxId) && c.status !== 'resolved')
+    if (activeConv) {
+      conversationId = activeConv.id
+    }
+  }
+
+  if (!conversationId) {
+    const createConvUrl = `${baseUrl}/api/v1/accounts/${accountId}/conversations`
+    const createRes = await fetch(createConvUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        api_access_token: accessToken,
+      },
+      body: JSON.stringify({
+        inbox_id: parseInt(inboxId),
+        contact_id: contactId,
+      }),
+    })
+    if (!createRes.ok) {
+      throw new Error(`Chatwoot failed to create conversation: ${createRes.status}`)
+    }
+    const convData = await createRes.json()
+    conversationId = convData?.id
+  }
+
+  if (!conversationId) {
+    throw new Error('Could not resolve or create Chatwoot conversation.')
+  }
+
+  // 4. Send message
+  const msgUrl = `${baseUrl}/api/v1/accounts/${accountId}/conversations/${conversationId}/messages`
+  
+  if (mediaUrl && ['image', 'video', 'audio', 'document'].includes(messageType)) {
+    // Media message
+    const mediaRes = await fetch(mediaUrl)
+    if (!mediaRes.ok) {
+      throw new Error(`Failed to download media from: ${mediaUrl}`)
+    }
+    const blob = await mediaRes.blob()
+    const file = new File([blob], filename || 'file', { type: blob.type })
+    
+    const formData = new FormData()
+    formData.append('content', content || '')
+    formData.append('message_type', 'outgoing')
+    formData.append('private', 'false')
+    formData.append('attachments[]', file)
+
+    const response = await fetch(msgUrl, {
+      method: 'POST',
+      headers: {
+        api_access_token: accessToken,
+      },
+      body: formData,
+    })
+    if (!response.ok) {
+      throw new Error(`Chatwoot failed to send media message: ${response.status}`)
+    }
+    const data = await response.json()
+    return data?.id?.toString() || `cw_msg_${Date.now()}`
+  } else {
+    // Text message / fallback
+    const textToSend = content || ''
+    const response = await fetch(msgUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        api_access_token: accessToken,
+      },
+      body: JSON.stringify({
+        content: textToSend,
+        message_type: 'outgoing',
+        private: false,
+      }),
+    })
+    if (!response.ok) {
+      throw new Error(`Chatwoot failed to send text message: ${response.status}`)
+    }
+    const data = await response.json()
+    return data?.id?.toString() || `cw_msg_${Date.now()}`
+  }
+}
+
+/**
+ * Create/Start a session in WAHA.
+ */
+export async function createWahaSession(
+  args: { sessionName: string; accessToken: string; baseUrl: string }
+): Promise<void> {
+  const { sessionName, accessToken, baseUrl } = args
+  const url = `${baseUrl}/api/sessions`
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Api-Key': accessToken,
+    },
+    body: JSON.stringify({
+      name: sessionName,
+    }),
+  })
+  if (!response.ok) {
+    throw new Error(`WAHA createSession error: ${response.status}`)
+  }
+}
+
+/**
+ * Verify a WAHA connection state.
+ */
+export async function verifyWahaConnection(args: {
+  baseUrl: string
+  accessToken: string
+  sessionName: string
+  allowClosed?: boolean
+}): Promise<MetaPhoneInfo> {
+  const { baseUrl, accessToken, sessionName, allowClosed = false } = args
+  const url = `${baseUrl}/api/sessions/${sessionName}/status`
+  
+  let response = await fetch(url, {
+    headers: { 'X-Api-Key': accessToken },
+  })
+  
+  if (response.status === 404) {
+    // Session doesn't exist, create it
+    await createWahaSession({ sessionName, accessToken, baseUrl })
+    // Re-check
+    response = await fetch(url, {
+      headers: { 'X-Api-Key': accessToken },
+    })
+  }
+  
+  if (!response.ok) {
+    throw new Error(`WAHA session status check failed: ${response.status}`)
+  }
+  
+  const data = await response.json()
+  const status = data?.status
+  
+  if (status !== 'WORKING' && !allowClosed) {
+    throw new Error(`WAHA session status is "${status || 'unknown'}" (needs to be WORKING).`)
+  }
+  
+  return {
+    id: `waha:${sessionName}`,
+    display_phone_number: `WAHA Session: ${sessionName}`,
+    verified_name: `WAHA Connection`,
+    quality_rating: 'GREEN',
+  }
+}
+
+/**
+ * Fetch QR Code image from WAHA.
+ */
+export async function connectWahaInstance(args: {
+  baseUrl: string
+  accessToken: string
+  sessionName: string
+}): Promise<ConnectInstanceResult> {
+  const { baseUrl, accessToken, sessionName } = args
+  const url = `${baseUrl}/api/${sessionName}/auth/qr`
+  const response = await fetch(url, {
+    headers: { 'X-Api-Key': accessToken },
+  })
+  if (!response.ok) {
+    throw new Error(`WAHA qr check failed: ${response.status}`)
+  }
+  const blob = await response.blob()
+  const buffer = Buffer.from(await blob.arrayBuffer())
+  const base64 = `data:image/png;base64,${buffer.toString('base64')}`
+  return {
+    base64,
+    status: 'connecting',
+  }
+}
+
+/**
+ * Send message via WAHA API.
+ */
+export async function sendWahaMessage(args: {
+  baseUrl: string
+  accessToken: string
+  sessionName: string
+  to: string
+  messageType: 'text' | 'image' | 'video' | 'audio' | 'document' | 'template'
+  content?: string
+  mediaUrl?: string
+  filename?: string
+}): Promise<string> {
+  const { baseUrl, accessToken, sessionName, to, messageType, content, mediaUrl, filename } = args
+  
+  const cleanPhone = to.replace(/\D/g, '')
+  const chatId = `${cleanPhone}@c.us`
+
+  const headers = {
+    'Content-Type': 'application/json',
+    'X-Api-Key': accessToken,
+  }
+
+  if (mediaUrl && ['image', 'video', 'audio', 'document'].includes(messageType)) {
+    let mimetype = 'application/octet-stream'
+    if (messageType === 'image') mimetype = 'image/jpeg'
+    else if (messageType === 'video') mimetype = 'video/mp4'
+    else if (messageType === 'audio') mimetype = 'audio/mp4'
+    else if (messageType === 'document') mimetype = 'application/pdf'
+
+    const url = `${baseUrl}/api/sendFile`
+    const body = {
+      session: sessionName,
+      chatId,
+      file: {
+        url: mediaUrl,
+        mimetype,
+        filename: filename || 'file',
+      },
+      caption: content || undefined,
+    }
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+    })
+
+    if (!response.ok) {
+      throw new Error(`WAHA sendFile failed: ${response.status}`)
+    }
+    const data = await response.json()
+    return data?.id || `waha_msg_${Date.now()}`
+  } else {
+    const url = `${baseUrl}/api/sendText`
+    const body = {
+      session: sessionName,
+      chatId,
+      text: content || '',
+    }
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+    })
+
+    if (!response.ok) {
+      throw new Error(`WAHA sendText failed: ${response.status}`)
+    }
+    const data = await response.json()
+    return data?.id || `waha_msg_${Date.now()}`
+  }
 }
 

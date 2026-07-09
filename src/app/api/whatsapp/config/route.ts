@@ -5,6 +5,8 @@ import {
   registerPhoneNumber,
   subscribeWabaToApp,
   verifyPhoneNumber,
+  verifyChatwootConnection,
+  verifyWahaConnection,
 } from '@/lib/whatsapp/meta-api'
 import { encrypt, decrypt } from '@/lib/whatsapp/encryption'
 
@@ -129,25 +131,73 @@ export async function GET() {
       )
     }
 
-    // Validate credentials against Meta
-    try {
-      const phoneInfo = await verifyPhoneNumber({
-        phoneNumberId: config.phone_number_id,
-        accessToken,
-        wabaId: config.waba_id || undefined,
-      })
-      return NextResponse.json({ connected: true, phone_info: phoneInfo })
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unknown Meta API error'
-      console.error('[whatsapp/config GET] Meta API verification failed:', message)
-      return NextResponse.json(
-        {
-          connected: false,
-          reason: 'meta_api_error',
-          message: `Meta API rejected the credentials: ${message}`,
-        },
-        { status: 200 }
-      )
+    // Validate credentials
+    const isWaha = config.phone_number_id?.startsWith('waha:')
+    const isChatwoot = config.phone_number_id?.startsWith('chatwoot:')
+    if (isWaha) {
+      const [_, sessionName] = config.phone_number_id.split(':')
+      try {
+        const phoneInfo = await verifyWahaConnection({
+          baseUrl: config.waba_id || '',
+          accessToken,
+          sessionName,
+        })
+        return NextResponse.json({ connected: true, phone_info: phoneInfo })
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Unknown WAHA error'
+        console.error('[whatsapp/config GET] WAHA verification failed:', message)
+        const isDisconnected = message.includes('needs to be WORKING')
+        return NextResponse.json(
+          {
+            connected: false,
+            reason: isDisconnected ? 'disconnected' : 'meta_api_error',
+            message: isDisconnected ? 'WAHA is disconnected. Scan the QR code to pair your device.' : `WAHA rejected the credentials: ${message}`,
+          },
+          { status: 200 }
+        )
+      }
+    } else if (isChatwoot) {
+      const [_, cwAccountId, cwInboxId] = config.phone_number_id.split(':')
+      try {
+        const phoneInfo = await verifyChatwootConnection({
+          baseUrl: config.waba_id || '',
+          accessToken,
+          accountId: cwAccountId,
+          inboxId: cwInboxId,
+        })
+        return NextResponse.json({ connected: true, phone_info: phoneInfo })
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Unknown Chatwoot error'
+        return NextResponse.json(
+          {
+            connected: false,
+            reason: 'meta_api_error',
+            message: `Chatwoot connection failed: ${message}`,
+          },
+          { status: 200 }
+        )
+      }
+    } else {
+      try {
+        const phoneInfo = await verifyPhoneNumber({
+          phoneNumberId: config.phone_number_id,
+          accessToken,
+          wabaId: config.waba_id || undefined,
+        })
+        return NextResponse.json({ connected: true, phone_info: phoneInfo })
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Unknown Meta API error'
+        console.error('[whatsapp/config GET] Meta API verification failed:', message)
+        const isDisconnected = message.includes('needs to be open')
+        return NextResponse.json(
+          {
+            connected: false,
+            reason: isDisconnected ? 'disconnected' : 'meta_api_error',
+            message: isDisconnected ? 'WhatsApp is disconnected. Scan the QR code to pair your device.' : `Meta API rejected the credentials: ${message}`,
+          },
+          { status: 200 }
+        )
+      }
     }
   } catch (error) {
     console.error('Error in WhatsApp config GET:', error)
@@ -236,21 +286,71 @@ export async function POST(request: Request) {
       )
     }
 
-    // Verify credentials with Meta BEFORE saving
+    // Verify credentials BEFORE saving
+    const isWaha = phone_number_id.startsWith('waha:')
+    const isChatwoot = phone_number_id.startsWith('chatwoot:')
     let phoneInfo
-    try {
-      phoneInfo = await verifyPhoneNumber({
-        phoneNumberId: phone_number_id,
-        accessToken: access_token,
-        wabaId: waba_id || undefined,
-      })
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unknown Meta API error'
-      console.error('Meta API verification failed during save:', message)
-      return NextResponse.json(
-        { error: `Meta API error: ${message}` },
-        { status: 400 }
-      )
+    if (isWaha) {
+      const [_, sessionName] = phone_number_id.split(':')
+      if (!sessionName) {
+        return NextResponse.json(
+          { error: 'WAHA Session Name is required' },
+          { status: 400 }
+        )
+      }
+      try {
+        phoneInfo = await verifyWahaConnection({
+          baseUrl: waba_id,
+          accessToken: access_token,
+          sessionName,
+          allowClosed: true,
+        })
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Unknown WAHA connection error'
+        return NextResponse.json(
+          { error: `WAHA error: ${message}` },
+          { status: 400 }
+        )
+      }
+    } else if (isChatwoot) {
+      const [_, cwAccountId, cwInboxId] = phone_number_id.split(':')
+      if (!cwAccountId || !cwInboxId) {
+        return NextResponse.json(
+          { error: 'Chatwoot Account ID and Inbox ID are required' },
+          { status: 400 }
+        )
+      }
+      try {
+        phoneInfo = await verifyChatwootConnection({
+          baseUrl: waba_id,
+          accessToken: access_token,
+          accountId: cwAccountId,
+          inboxId: cwInboxId,
+        })
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Unknown Chatwoot connection error'
+        return NextResponse.json(
+          { error: `Chatwoot error: ${message}` },
+          { status: 400 }
+        )
+      }
+    } else {
+      // Verify credentials with Meta BEFORE saving (allow disconnected state)
+      try {
+        phoneInfo = await verifyPhoneNumber({
+          phoneNumberId: phone_number_id,
+          accessToken: access_token,
+          wabaId: waba_id || undefined,
+          allowClosed: true,
+        })
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Unknown Meta API error'
+        console.error('Meta API verification failed during save:', message)
+        return NextResponse.json(
+          { error: `Meta API error: ${message}` },
+          { status: 400 }
+        )
+      }
     }
 
     // Encrypt sensitive tokens before storing
@@ -298,7 +398,7 @@ export async function POST(request: Request) {
     // is not a failure, just an incomplete-but-valid save.
     let registrationSkipped = false
 
-    const needsRegistration = !sameNumber || (typeof pin === 'string' && pin.length > 0)
+    const needsRegistration = !isChatwoot && !isWaha && (!sameNumber || (typeof pin === 'string' && pin.length > 0))
     if (needsRegistration) {
       if (!pin) {
         // No PIN provided. Meta TEST numbers (Developer Console) are
@@ -336,7 +436,7 @@ export async function POST(request: Request) {
     // Skipped only when there's no waba_id (legacy rows from before
     // we required it).
     let subscribedAppsAt: string | null = null
-    if (waba_id) {
+    if (waba_id && !isChatwoot && !isWaha) {
       try {
         await subscribeWabaToApp({
           wabaId: waba_id,
