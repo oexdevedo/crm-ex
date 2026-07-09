@@ -56,7 +56,7 @@ export function WhatsAppConfig() {
   const [tokenEdited, setTokenEdited] = useState(false);
   const [loaded, setLoaded] = useState(false);
 
-  const [provider, setProvider] = useState<'evolution' | 'chatwoot' | 'waha'>('evolution');
+  const [provider, setProvider] = useState<'evolution' | 'chatwoot' | 'waha' | 'direct_waha'>('direct_waha');
   const [cwAccountId, setCwAccountId] = useState('');
   const [cwInboxId, setCwInboxId] = useState('');
   const [wahaSessionName, setWahaSessionName] = useState('');
@@ -89,7 +89,8 @@ export function WhatsAppConfig() {
         setConfig(data);
         const isCw = data.phone_number_id?.startsWith('chatwoot:');
         const isWaha = data.phone_number_id?.startsWith('waha:');
-        setProvider(isWaha ? 'waha' : isCw ? 'chatwoot' : 'evolution');
+        const isDirectWaha = isWaha && data.waba_id === 'https://area-51-waha.mypaeg.easypanel.host';
+        setProvider(isDirectWaha ? 'direct_waha' : isWaha ? 'waha' : isCw ? 'chatwoot' : 'evolution');
         
         if (isCw) {
           const [_, accountVal, inboxVal] = data.phone_number_id.split(':');
@@ -116,7 +117,7 @@ export function WhatsAppConfig() {
         setTokenEdited(false);
       } else {
         setConfig(null);
-        setProvider('evolution');
+        setProvider('direct_waha');
         setPhoneNumberId('');
         setCwAccountId('');
         setCwInboxId('');
@@ -225,6 +226,7 @@ export function WhatsAppConfig() {
   async function handleSave() {
     const isCw = provider === 'chatwoot';
     const isWaha = provider === 'waha';
+    const isDirectWaha = provider === 'direct_waha';
     if (isCw) {
       if (!cwAccountId.trim()) {
         toast.error('O ID da Conta Chatwoot é obrigatório');
@@ -247,6 +249,8 @@ export function WhatsAppConfig() {
         toast.error('A URL do Servidor WAHA é obrigatória');
         return;
       }
+    } else if (isDirectWaha) {
+      // No validation needed
     } else {
       if (!phoneNumberId.trim()) {
         toast.error('Nome da Instância é obrigatório');
@@ -257,7 +261,12 @@ export function WhatsAppConfig() {
         return;
       }
     }
-    if (!config && (!accessToken.trim() || !tokenEdited)) {
+
+    const directWahaKey = 'key_328Pwattga9Oa6D0VOErt900Iwxg1KAD';
+    const tokenToSave = isDirectWaha ? directWahaKey : accessToken;
+    const isTokenEdited = isDirectWaha ? true : tokenEdited;
+
+    if (!config && (!tokenToSave.trim() || !isTokenEdited)) {
       toast.error('A Chave da API (Access Token) é obrigatória no primeiro cadastro');
       return;
     }
@@ -269,17 +278,21 @@ export function WhatsAppConfig() {
         ? `chatwoot:${cwAccountId.trim()}:${cwInboxId.trim()}` 
         : isWaha 
           ? `waha:${wahaSessionName.trim()}` 
-          : phoneNumberId.trim();
+          : isDirectWaha
+            ? `waha:direct_${accountId?.slice(0, 8) || 'default'}`
+            : phoneNumberId.trim();
+
+      const wabaIdValue = isDirectWaha ? 'https://area-51-waha.mypaeg.easypanel.host' : wabaId.trim();
 
       const payload: Record<string, unknown> = {
         phone_number_id: phoneIdValue,
-        waba_id: wabaId.trim(),
+        waba_id: wabaIdValue,
         verify_token: verifyToken.trim() || null,
         pin: null, // Bypassed
       };
 
-      if (tokenEdited && accessToken !== MASKED_TOKEN && accessToken.trim()) {
-        payload.access_token = accessToken.trim();
+      if (isTokenEdited && tokenToSave !== MASKED_TOKEN && tokenToSave.trim()) {
+        payload.access_token = tokenToSave.trim();
       } else if (config) {
         toast.error('Por favor, reinsira a API Key para salvar alterações');
         setSaving(false);
@@ -513,7 +526,20 @@ export function WhatsAppConfig() {
             <CardContent className="space-y-4">
               <div className="space-y-2">
                 <Label className="text-muted-foreground">Provedor de Conexão (Provider)</Label>
-                 <div className="grid grid-cols-3 gap-2">
+                 <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                  <Button
+                    type="button"
+                    variant={provider === 'direct_waha' ? 'default' : 'outline'}
+                    onClick={() => {
+                      setProvider('direct_waha');
+                      setWabaId('');
+                      setAccessToken('');
+                      setTokenEdited(true);
+                    }}
+                    className="w-full justify-center"
+                  >
+                    WhatsApp Direto
+                  </Button>
                   <Button
                     type="button"
                     variant={provider === 'evolution' ? 'default' : 'outline'}
@@ -551,12 +577,25 @@ export function WhatsAppConfig() {
                     }}
                     className="w-full justify-center"
                   >
-                    WAHA
+                    WAHA Custom
                   </Button>
                 </div>
               </div>
 
-              {provider === 'evolution' ? (
+              {provider === 'direct_waha' ? (
+                <div className="rounded-lg border border-primary/20 bg-primary/5 p-4 space-y-2">
+                  <h4 className="text-sm font-semibold text-foreground flex items-center gap-1.5">
+                    <Zap className="size-4 text-primary animate-pulse" />
+                    WhatsApp Direto (WAHA)
+                  </h4>
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    Esta opção permite conectar sua conta do WhatsApp diretamente ao Unico Ex via QR Code, utilizando nosso servidor dedicado seguro. 
+                  </p>
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    Nenhuma credencial ou servidor adicional é necessário. Basta clicar em <strong>Salvar Configuração</strong> abaixo e, em seguida, escanear o QR Code gerado no topo da página.
+                  </p>
+                </div>
+              ) : provider === 'evolution' ? (
                 <>
                   <div className="space-y-2">
                     <Label className="text-muted-foreground">Nome da Instância (Instance Name)</Label>
